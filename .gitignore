@@ -1,0 +1,4 @@
+build/
+JUCE
+render_out/
+.DS_Store

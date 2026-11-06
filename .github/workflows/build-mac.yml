@@ -1,0 +1,47 @@
+name: Build Mac plugin
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (Intel + Apple Silicon)
+        run: >
+          cmake -S . -B build -G Xcode
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+
+      - name: Build AU and VST3
+        run: cmake --build build --config Release --target AquaSynth_AU AquaSynth_VST3 -- -quiet
+
+      - name: Sign (ad-hoc) and check architectures
+        run: |
+          AU="build/AquaSynth_artefacts/Release/AU/AquaSynth.component"
+          VST="build/AquaSynth_artefacts/Release/VST3/AquaSynth.vst3"
+          codesign --force --deep -s - "$AU"
+          codesign --force --deep -s - "$VST"
+          lipo -info "$AU/Contents/MacOS/AquaSynth"
+
+      - name: Validate with auval
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/AquaSynth_artefacts/Release/AU/AquaSynth.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar || true
+          sleep 3
+          auval -v aumu Aqsy Shsg
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent build/AquaSynth_artefacts/Release/AU/AquaSynth.component dist/AquaSynth-AU.zip
+          ditto -c -k --keepParent build/AquaSynth_artefacts/Release/VST3/AquaSynth.vst3 dist/AquaSynth-VST3.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AquaSynth-mac
+          path: dist/*.zip
